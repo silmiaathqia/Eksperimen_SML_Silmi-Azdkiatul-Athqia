@@ -55,7 +55,7 @@ jobs:
         
         try:
             # Try to import the module by file path since filename has hyphens
-            module_path = os.path.join(preprocessing_dir, 'automate_silmi-azdkiatul-athqia.py')
+            module_path = os.path.join(preprocessing_dir, 'automate_silmi_azdkiatul_athqia.py')
             if os.path.exists(module_path):
                 spec = importlib.util.spec_from_file_location('preprocessing_module', module_path)
                 preprocessing_module = importlib.util.module_from_spec(spec)
