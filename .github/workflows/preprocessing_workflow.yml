@@ -1,0 +1,149 @@
+name: Automated Data Preprocessing
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  preprocessing:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Run preprocessing
+      run: |
+        cd preprocessing
+        python -c "
+        import sys
+        import os
+        
+        try:
+            from automate_silmi_azdkiatul_athqia import RemoteWorkerDataPreprocessor
+            
+            print('Starting preprocessing pipeline...')
+            
+            preprocessor = RemoteWorkerDataPreprocessor(random_state=42)
+            
+            input_file = '../remote_worker_productivity_raw.csv'
+            output_dir = 'preprocessed_data'
+            
+            if not os.path.exists(input_file):
+                print(f'Input file not found: {input_file}')
+                sys.exit(1)
+            
+            result = preprocessor.preprocess(input_file, output_dir)
+            
+            print('Preprocessing completed successfully!')
+            print(f'Training samples: {len(result[\"X_train\"])}')
+            print(f'Validation samples: {len(result[\"X_val\"])}')
+            print(f'Test samples: {len(result[\"X_test\"])}')
+            print(f'Features: {result[\"X_train\"].shape[1]}')
+            
+        except Exception as e:
+            print(f'Error: {e}')
+            sys.exit(1)
+        "
+    
+    - name: Verify outputs
+      run: |
+        echo "Checking preprocessing outputs..."
+        
+        expected_files=(
+          "preprocessing/preprocessed_data/data_train.csv"
+          "preprocessing/preprocessed_data/data_validation.csv"
+          "preprocessing/preprocessed_data/data_test.csv"
+          "preprocessing/preprocessed_data/label_encoder.pkl"
+          "preprocessing/preprocessed_data/feature_scaler.pkl"
+          "preprocessing/preprocessed_data/preprocessing_summary.json"
+        )
+        
+        for file in "${expected_files[@]}"; do
+          if [ ! -f "$file" ]; then
+            echo "Missing: $file"
+            exit 1
+          fi
+        done
+        
+        echo "All files generated successfully"
+    
+    - name: Generate report
+      run: |
+        python -c "
+        import json
+        import pandas as pd
+        from datetime import datetime
+        
+        with open('preprocessing/preprocessed_data/preprocessing_summary.json', 'r') as f:
+            summary = json.load(f)
+        
+        train_data = pd.read_csv('preprocessing/preprocessed_data/data_train.csv')
+        val_data = pd.read_csv('preprocessing/preprocessed_data/data_validation.csv')
+        test_data = pd.read_csv('preprocessing/preprocessed_data/data_test.csv')
+        
+        report = f'''# Preprocessing Report
+        
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}
+
+## Data Overview
+- Original Shape: {summary.get('original_shape', 'N/A')}
+- Final Shape: {summary.get('final_shape_after_validation', 'N/A')}
+- Missing Values Removed: {summary.get('missing_values_removed', 0)}
+- Duplicates Removed: {summary.get('duplicates_removed', 0)}
+
+## Features
+- Columns Dropped: {', '.join(summary.get('columns_dropped', []))}
+- Categorical Features: {', '.join(summary.get('categorical_features_encoded', []))}
+- Total Features: {summary.get('num_features', 'N/A')}
+
+## Data Split
+- Training: {len(train_data)} samples
+- Validation: {len(val_data)} samples  
+- Test: {len(test_data)} samples
+- Classes: {summary.get('num_classes', 'N/A')}
+        '''
+        
+        with open('preprocessing/preprocessed_data/preprocessing_report.md', 'w') as f:
+            f.write(report)
+        
+        print('Report generated successfully')
+        "
+    
+    - name: Upload results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: preprocessed-data
+        path: preprocessing/preprocessed_data/
+        retention-days: 30
+    
+    - name: Commit results
+      if: success()
+      run: |
+        git config --local user.email "silmiathqia@gmail.com"
+        git config --local user.name "silmiaathqia"
+        
+        git add preprocessing/preprocessed_data/
+        
+        if [ -n "$(git status --porcelain preprocessing/preprocessed_data/)" ]; then
+          git commit -m "Auto-update preprocessed data"
+          git push
+        else
+          echo "No changes to commit"
+        fi
