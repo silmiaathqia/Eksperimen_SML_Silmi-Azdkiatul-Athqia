@@ -175,10 +175,10 @@ jobs:
         echo "Preprocessing Summary:"
         if [ -f "preprocessing/processed_data/preprocessing_summary.json" ]; then
           python -c "
-          import json
-          with open('preprocessing/processed_data/preprocessing_summary.json', 'r') as f:
-              summary = json.load(f)
-          print(json.dumps(summary, indent=2))
+import json
+with open('preprocessing/processed_data/preprocessing_summary.json', 'r') as f:
+    summary = json.load(f)
+print(json.dumps(summary, indent=2))
           "
         else
           echo "Summary file not found"
@@ -200,21 +200,21 @@ jobs:
       if: success()
       run: |
         python -c "
-        import os
-        import json
-        from datetime import datetime
-        
-        # Generate simple report
-        report = {
-            'timestamp': datetime.now().isoformat(),
-            'status': 'success',
-            'files_generated': os.listdir('preprocessing/processed_data/') if os.path.exists('preprocessing/processed_data/') else []
-        }
-        
-        with open('preprocessing_report.json', 'w') as f:
-            json.dump(report, f, indent=2)
-        
-        print('Preprocessing report generated')
+import os
+import json
+from datetime import datetime
+
+# Generate simple report
+report = {
+    'timestamp': datetime.now().isoformat(),
+    'status': 'success',
+    'files_generated': os.listdir('preprocessing/processed_data/') if os.path.exists('preprocessing/processed_data/') else []
+}
+
+with open('preprocessing_report.json', 'w') as f:
+    json.dump(report, f, indent=2)
+
+print('Preprocessing report generated')
         "
     
     - name: Commit and push results
@@ -249,17 +249,17 @@ jobs:
         
         # Create failure report
         python -c "
-        import json
-        from datetime import datetime
-        
-        report = {
-            'timestamp': datetime.now().isoformat(),
-            'status': 'failed',
-            'error': 'Preprocessing workflow failed'
-        }
-        
-        with open('preprocessing_failure_report.json', 'w') as f:
-            json.dump(report, f, indent=2)
+import json
+from datetime import datetime
+
+report = {
+    'timestamp': datetime.now().isoformat(),
+    'status': 'failed',
+    'error': 'Preprocessing workflow failed'
+}
+
+with open('preprocessing_failure_report.json', 'w') as f:
+    json.dump(report, f, indent=2)
         "
     
     - name: Upload failure report
