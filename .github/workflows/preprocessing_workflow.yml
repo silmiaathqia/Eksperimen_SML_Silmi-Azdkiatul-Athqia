@@ -1,13 +1,12 @@
 name: Automated Data Preprocessing
-
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
   schedule:
-    - cron: '0 0 * * *'
-  workflow_dispatch:
+    - cron: '0 0 * * *'  # Jalankan setiap hari jam 00:00 UTC
+  workflow_dispatch:  # Manual trigger
 
 jobs:
   preprocessing:
@@ -27,123 +26,173 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
     
+    - name: Create processed_data directory
+      run: |
+        mkdir -p preprocessing/processed_data
+    
     - name: Run preprocessing
       run: |
-        cd preprocessing
         python -c "
         import sys
         import os
         
+        # Add preprocessing directory to Python path
+        sys.path.insert(0, os.path.join(os.getcwd(), 'preprocessing'))
+        
         try:
-            from automate_silmi_azdkiatul_athqia import RemoteWorkerDataPreprocessor
+            # Import dengan nama file yang benar (dengan dash)
+            from automate_silmi_azdkiatul_athqia import preprocess_remote_worker_data
             
-            print('Starting preprocessing pipeline...')
+            print('Starting automated preprocessing...')
+            result = preprocess_remote_worker_data(
+                file_path='remote_worker_productivity_raw.csv',
+                save_path='preprocessing/processed_data/'
+            )
             
-            preprocessor = RemoteWorkerDataPreprocessor(random_state=42)
-            
-            input_file = '../remote_worker_productivity_raw.csv'
-            output_dir = 'preprocessed_data'
-            
-            if not os.path.exists(input_file):
-                print(f'Input file not found: {input_file}')
+            if result is not None:
+                print('Preprocessing completed successfully!')
+                
+                # Check generated files
+                processed_files = os.listdir('preprocessing/processed_data/')
+                print(f'Generated files: {processed_files}')
+                
+                # Verify expected files exist
+                expected_files = [
+                    'data_train.csv', 'data_validation.csv', 'data_test.csv',
+                    'label_encoder.pkl', 'feature_scaler.pkl',
+                    'label_mapping.csv', 'feature_names.csv',
+                    'preprocessing_summary.json'
+                ]
+                
+                missing_files = [f for f in expected_files if f not in processed_files]
+                if missing_files:
+                    print(f'Missing expected files: {missing_files}')
+                else:
+                    print('All expected files generated successfully!')
+                    
+            else:
+                print('Preprocessing failed!')
                 sys.exit(1)
-            
-            result = preprocessor.preprocess(input_file, output_dir)
-            
-            print('Preprocessing completed successfully!')
-            print(f'Training samples: {len(result[\"X_train\"])}')
-            print(f'Validation samples: {len(result[\"X_val\"])}')
-            print(f'Test samples: {len(result[\"X_test\"])}')
-            print(f'Features: {result[\"X_train\"].shape[1]}')
-            
+                
+        except ImportError as e:
+            print(f'Import error: {e}')
+            print('Available files in preprocessing directory:')
+            try:
+                for file in os.listdir('preprocessing'):
+                    print(f'  - {file}')
+            except FileNotFoundError:
+                print('  Preprocessing directory not found!')
+            sys.exit(1)
+        except FileNotFoundError as e:
+            print(f'File not found: {e}')
+            print('Available files in root directory:')
+            for file in os.listdir('.'):
+                print(f'  - {file}')
+            sys.exit(1)
         except Exception as e:
-            print(f'Error: {e}')
+            print(f'Error during preprocessing: {e}')
+            import traceback
+            traceback.print_exc()
             sys.exit(1)
         "
     
-    - name: Verify outputs
+    - name: Display preprocessing summary
+      if: success()
       run: |
-        echo "Checking preprocessing outputs..."
-        
-        expected_files=(
-          "preprocessing/preprocessed_data/data_train.csv"
-          "preprocessing/preprocessed_data/data_validation.csv"
-          "preprocessing/preprocessed_data/data_test.csv"
-          "preprocessing/preprocessed_data/label_encoder.pkl"
-          "preprocessing/preprocessed_data/feature_scaler.pkl"
-          "preprocessing/preprocessed_data/preprocessing_summary.json"
-        )
-        
-        for file in "${expected_files[@]}"; do
-          if [ ! -f "$file" ]; then
-            echo "Missing: $file"
-            exit 1
-          fi
-        done
-        
-        echo "All files generated successfully"
+        echo "Preprocessing Summary:"
+        if [ -f "preprocessing/processed_data/preprocessing_summary.json" ]; then
+          python -c "
+          import json
+          with open('preprocessing/processed_data/preprocessing_summary.json', 'r') as f:
+              summary = json.load(f)
+          print(json.dumps(summary, indent=2))
+          "
+        else
+          echo "Summary file not found"
+        fi
     
-    - name: Generate report
-      run: |
-        python -c "
-        import json
-        import pandas as pd
-        from datetime import datetime
-        
-        with open('preprocessing/preprocessed_data/preprocessing_summary.json', 'r') as f:
-            summary = json.load(f)
-        
-        train_data = pd.read_csv('preprocessing/preprocessed_data/data_train.csv')
-        val_data = pd.read_csv('preprocessing/preprocessed_data/data_validation.csv')
-        test_data = pd.read_csv('preprocessing/preprocessed_data/data_test.csv')
-        
-        report = f'''# Preprocessing Report
-        
-Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}
-
-## Data Overview
-- Original Shape: {summary.get('original_shape', 'N/A')}
-- Final Shape: {summary.get('final_shape_after_validation', 'N/A')}
-- Missing Values Removed: {summary.get('missing_values_removed', 0)}
-- Duplicates Removed: {summary.get('duplicates_removed', 0)}
-
-## Features
-- Columns Dropped: {', '.join(summary.get('columns_dropped', []))}
-- Categorical Features: {', '.join(summary.get('categorical_features_encoded', []))}
-- Total Features: {summary.get('num_features', 'N/A')}
-
-## Data Split
-- Training: {len(train_data)} samples
-- Validation: {len(val_data)} samples  
-- Test: {len(test_data)} samples
-- Classes: {summary.get('num_classes', 'N/A')}
-        '''
-        
-        with open('preprocessing/preprocessed_data/preprocessing_report.md', 'w') as f:
-            f.write(report)
-        
-        print('Report generated successfully')
-        "
-    
-    - name: Upload results
+    - name: Upload preprocessing results
       uses: actions/upload-artifact@v4
-      if: always()
+      if: always()  # Upload artifacts even if previous steps failed
       with:
         name: preprocessed-data
-        path: preprocessing/preprocessed_data/
+        path: |
+          preprocessing/processed_data/
+          preprocessing/*.pkl
+          preprocessing/*.csv
+          preprocessing/*.json
         retention-days: 30
     
-    - name: Commit results
+    - name: Generate preprocessing report
       if: success()
+      run: |
+        python -c "
+        import os
+        import json
+        from datetime import datetime
+        
+        # Generate simple report
+        report = {
+            'timestamp': datetime.now().isoformat(),
+            'status': 'success',
+            'files_generated': os.listdir('preprocessing/processed_data/') if os.path.exists('preprocessing/processed_data/') else []
+        }
+        
+        with open('preprocessing_report.json', 'w') as f:
+            json.dump(report, f, indent=2)
+        
+        print('Preprocessing report generated')
+        "
+    
+    - name: Commit and push results
+      if: success()  # Only run if preprocessing was successful
       run: |
         git config --local user.email "silmiathqia@gmail.com"
         git config --local user.name "silmiaathqia"
         
-        git add preprocessing/preprocessed_data/
+        # Check if there are changes to commit
+        git add preprocessing/processed_data/ preprocessing_report.json
         
-        if [ -n "$(git status --porcelain preprocessing/preprocessed_data/)" ]; then
-          git commit -m "Auto-update preprocessed data"
-          git push
+        if [ -n "$(git status --porcelain)" ]; then
+          git commit -m "Auto-update preprocessed data - $(date '+%Y-%m-%d %H:%M:%S')"
+          
+          # Try to push, handle potential conflicts
+          if ! git push; then
+            echo "Push failed, trying to pull and merge..."
+            git pull --rebase origin main
+            git push
+          fi
         else
           echo "No changes to commit"
         fi
+    
+    - name: Cleanup on failure
+      if: failure()
+      run: |
+        echo "Cleaning up after failure..."
+        # Remove any partial files that might have been created
+        rm -rf preprocessing/processed_data/*.tmp
+        rm -rf preprocessing/processed_data/*.partial
+        
+        # Create failure report
+        python -c "
+        import json
+        from datetime import datetime
+        
+        report = {
+            'timestamp': datetime.now().isoformat(),
+            'status': 'failed',
+            'error': 'Preprocessing workflow failed'
+        }
+        
+        with open('preprocessing_failure_report.json', 'w') as f:
+            json.dump(report, f, indent=2)
+        "
+    
+    - name: Upload failure report
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: failure-report
+        path: preprocessing_failure_report.json
+        retention-days: 7
