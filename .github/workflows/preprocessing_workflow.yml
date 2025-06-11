@@ -40,35 +40,70 @@ jobs:
         sys.path.insert(0, os.path.join(os.getcwd(), 'preprocessing'))
         
         try:
-            # Import dengan nama file yang benar (dengan dash)
-            from automate_silmi_azdkiatul_athqia import preprocess_remote_worker_data
+            # Import the preprocessing module
+            import automate_silmi_azdkiatul_athqia as preprocessing_module
             
-            print('Starting automated preprocessing...')
-            result = preprocess_remote_worker_data(
-                file_path='remote_worker_productivity_raw.csv',
-                save_path='preprocessing/processed_data/'
-            )
+            print('Available functions in preprocessing module:')
+            available_functions = [name for name in dir(preprocessing_module) if not name.startswith('_')]
+            print(available_functions)
             
-            if result is not None:
+            # Use the RemoteWorkerDataPreprocessor class
+            if hasattr(preprocessing_module, 'RemoteWorkerDataPreprocessor'):
+                print('Using RemoteWorkerDataPreprocessor class...')
+                
+                # Initialize preprocessor
+                preprocessor = preprocessing_module.RemoteWorkerDataPreprocessor(random_state=42)
+                
+                # Run preprocessing
+                print('Starting automated preprocessing...')
+                result = preprocessor.preprocess(
+                    file_path='remote_worker_productivity_raw.csv',
+                    output_dir='preprocessing/processed_data'
+                )
+                
+            elif hasattr(preprocessing_module, 'main'):
+                print('Using main function...')
+                
+                # Modify the current directory context for the main function
+                original_cwd = os.getcwd()
+                
+                # The main function expects the CSV file in the current directory
+                # We need to ensure it can find the file
+                if os.path.exists('remote_worker_productivity_raw.csv'):
+                    result = preprocessing_module.main()
+                else:
+                    print('CSV file not found in root directory')
+                    sys.exit(1)
+                    
+            else:
+                print('No suitable preprocessing function found.')
+                print('Available functions:', available_functions)
+                sys.exit(1)
+            
+            if result is not None or os.path.exists('preprocessing/processed_data'):
                 print('Preprocessing completed successfully!')
                 
                 # Check generated files
-                processed_files = os.listdir('preprocessing/processed_data/')
-                print(f'Generated files: {processed_files}')
-                
-                # Verify expected files exist
-                expected_files = [
-                    'data_train.csv', 'data_validation.csv', 'data_test.csv',
-                    'label_encoder.pkl', 'feature_scaler.pkl',
-                    'label_mapping.csv', 'feature_names.csv',
-                    'preprocessing_summary.json'
-                ]
-                
-                missing_files = [f for f in expected_files if f not in processed_files]
-                if missing_files:
-                    print(f'Missing expected files: {missing_files}')
+                if os.path.exists('preprocessing/processed_data'):
+                    processed_files = os.listdir('preprocessing/processed_data/')
+                    print(f'Generated files: {processed_files}')
+                    
+                    # Verify expected files exist
+                    expected_files = [
+                        'data_train.csv', 'data_validation.csv', 'data_test.csv',
+                        'label_encoder.pkl', 'feature_scaler.pkl',
+                        'label_mapping.csv', 'feature_names.csv',
+                        'preprocessing_summary.json'
+                    ]
+                    
+                    missing_files = [f for f in expected_files if f not in processed_files]
+                    if missing_files:
+                        print(f'Missing expected files: {missing_files}')
+                    else:
+                        print('All expected files generated successfully!')
                 else:
-                    print('All expected files generated successfully!')
+                    print('Processed data directory not found!')
+                    sys.exit(1)
                     
             else:
                 print('Preprocessing failed!')
@@ -76,13 +111,51 @@ jobs:
                 
         except ImportError as e:
             print(f'Import error: {e}')
-            print('Available files in preprocessing directory:')
+            print('Trying alternative approach - running the file directly...')
+            
+            # Try to run the file directly
             try:
-                for file in os.listdir('preprocessing'):
-                    print(f'  - {file}')
-            except FileNotFoundError:
-                print('  Preprocessing directory not found!')
-            sys.exit(1)
+                import subprocess
+                
+                # Change to the directory containing the script for proper execution
+                result = subprocess.run([
+                    'python', 
+                    'automate_silmi_azdkiatul_athqia.py'
+                ], capture_output=True, text=True, cwd='preprocessing')
+                
+                print('STDOUT:', result.stdout)
+                if result.stderr:
+                    print('STDERR:', result.stderr)
+                
+                if result.returncode == 0:
+                    print('Preprocessing completed via direct execution')
+                    
+                    # Move output files to the correct location if needed
+                    if os.path.exists('preprocessing/preprocessed_data'):
+                        import shutil
+                        if not os.path.exists('preprocessing/processed_data'):
+                            shutil.move('preprocessing/preprocessed_data', 'preprocessing/processed_data')
+                            print('Moved output files to correct location')
+                        
+                else:
+                    print(f'Direct execution failed with return code: {result.returncode}')
+                    sys.exit(1)
+                    
+            except Exception as direct_exec_error:
+                print(f'Direct execution also failed: {direct_exec_error}')
+                print('Available files in preprocessing directory:')
+                try:
+                    for file in os.listdir('preprocessing'):
+                        print(f'  - {file}')
+                        
+                    # Also check if CSV file exists in root
+                    print('Available files in root directory:')
+                    for file in os.listdir('.'):
+                        if file.endswith('.csv'):
+                            print(f'  - {file}')
+                except FileNotFoundError:
+                    print('  Directory not found!')
+                sys.exit(1)
         except FileNotFoundError as e:
             print(f'File not found: {e}')
             print('Available files in root directory:')
