@@ -24,198 +24,123 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        if [ -f requirements.txt ]; then
+          pip install -r requirements.txt
+        else
+          echo "requirements.txt not found, installing common dependencies"
+          pip install pandas numpy scikit-learn joblib
+        fi
     
     - name: Create processed_data directory
       run: |
         mkdir -p preprocessing/processed_data
+    
+    - name: Check file structure
+      run: |
+        echo "Current directory structure:"
+        find . -name "*.py" -o -name "*.csv" | head -20
+        echo "Contents of preprocessing directory:"
+        ls -la preprocessing/ || echo "preprocessing directory not found"
     
     - name: Run preprocessing
       run: |
         python -c "
         import sys
         import os
+        import importlib.util
         
         # Add preprocessing directory to Python path
-        sys.path.insert(0, os.path.join(os.getcwd(), 'preprocessing'))
+        preprocessing_dir = os.path.join(os.getcwd(), 'preprocessing')
+        sys.path.insert(0, preprocessing_dir)
         
         try:
-            # Import the preprocessing module
-            import automate_silmi_azdkiatul_athqia as preprocessing_module
-            
-            print('Available functions in preprocessing module:')
-            available_functions = [name for name in dir(preprocessing_module) if not name.startswith('_')]
-            print(available_functions)
-            
-            # Use the RemoteWorkerDataPreprocessor class
-            if hasattr(preprocessing_module, 'RemoteWorkerDataPreprocessor'):
-                print('Using RemoteWorkerDataPreprocessor class...')
+            # Try to import the module by file path since filename has hyphens
+            module_path = os.path.join(preprocessing_dir, 'automate_silmi-azdkiatul-athqia.py')
+            if os.path.exists(module_path):
+                spec = importlib.util.spec_from_file_location('preprocessing_module', module_path)
+                preprocessing_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(preprocessing_module)
                 
-                # Initialize preprocessor
+                print('🚀 Starting automated preprocessing...')
+                
+                # Use the RemoteWorkerDataPreprocessor class
                 preprocessor = preprocessing_module.RemoteWorkerDataPreprocessor(random_state=42)
                 
-                # Run preprocessing
-                print('Starting automated preprocessing...')
-                result = preprocessor.preprocess(
-                    file_path='remote_worker_productivity_raw.csv',
-                    output_dir='preprocessing/processed_data'
-                )
-                
-            elif hasattr(preprocessing_module, 'main'):
-                print('Using main function...')
-                
-                # Modify the current directory context for the main function
-                original_cwd = os.getcwd()
-                
-                # The main function expects the CSV file in the current directory
-                # We need to ensure it can find the file
-                if os.path.exists('remote_worker_productivity_raw.csv'):
-                    result = preprocessing_module.main()
-                else:
-                    print('CSV file not found in root directory')
-                    sys.exit(1)
-                    
-            else:
-                print('No suitable preprocessing function found.')
-                print('Available functions:', available_functions)
-                sys.exit(1)
-            
-            if result is not None or os.path.exists('preprocessing/processed_data'):
-                print('Preprocessing completed successfully!')
-                
-                # Check generated files
-                if os.path.exists('preprocessing/processed_data'):
-                    processed_files = os.listdir('preprocessing/processed_data/')
-                    print(f'Generated files: {processed_files}')
-                    
-                    # Verify expected files exist
-                    expected_files = [
-                        'data_train.csv', 'data_validation.csv', 'data_test.csv',
-                        'label_encoder.pkl', 'feature_scaler.pkl',
-                        'label_mapping.csv', 'feature_names.csv',
-                        'preprocessing_summary.json'
-                    ]
-                    
-                    missing_files = [f for f in expected_files if f not in processed_files]
-                    if missing_files:
-                        print(f'Missing expected files: {missing_files}')
-                    else:
-                        print('All expected files generated successfully!')
-                else:
-                    print('Processed data directory not found!')
-                    sys.exit(1)
-                    
-            else:
-                print('Preprocessing failed!')
-                sys.exit(1)
-                
-        except ImportError as e:
-            print(f'Import error: {e}')
-            print('Trying alternative approach - running the file directly...')
-            
-            # Try to run the file directly
-            try:
-                import subprocess
-                
-                # Change to the directory containing the script for proper execution
-                result = subprocess.run([
-                    'python', 
-                    'automate_silmi_azdkiatul_athqia.py'
-                ], capture_output=True, text=True, cwd='preprocessing')
-                
-                print('STDOUT:', result.stdout)
-                if result.stderr:
-                    print('STDERR:', result.stderr)
-                
-                if result.returncode == 0:
-                    print('Preprocessing completed via direct execution')
-                    
-                    # Move output files to the correct location if needed
-                    if os.path.exists('preprocessing/preprocessed_data'):
-                        import shutil
-                        if not os.path.exists('preprocessing/processed_data'):
-                            shutil.move('preprocessing/preprocessed_data', 'preprocessing/processed_data')
-                            print('Moved output files to correct location')
-                        
-                else:
-                    print(f'Direct execution failed with return code: {result.returncode}')
-                    sys.exit(1)
-                    
-            except Exception as direct_exec_error:
-                print(f'Direct execution also failed: {direct_exec_error}')
-                print('Available files in preprocessing directory:')
-                try:
-                    for file in os.listdir('preprocessing'):
-                        print(f'  - {file}')
-                        
-                    # Also check if CSV file exists in root
-                    print('Available files in root directory:')
+                # Check if raw data file exists
+                raw_data_path = 'remote_worker_productivity_raw.csv'
+                if not os.path.exists(raw_data_path):
+                    print(f'❌ Raw data file not found: {raw_data_path}')
+                    print('Available files in current directory:')
                     for file in os.listdir('.'):
                         if file.endswith('.csv'):
                             print(f'  - {file}')
-                except FileNotFoundError:
-                    print('  Directory not found!')
+                    sys.exit(1)
+                
+                # Run preprocessing
+                result = preprocessor.preprocess(
+                    file_path=raw_data_path,
+                    output_dir='preprocessing/processed_data'
+                )
+                
+                if result and 'X_train' in result:
+                    print('✅ Preprocessing completed successfully!')
+                    print(f'Training samples: {len(result[\"X_train\"])}')
+                    print(f'Validation samples: {len(result[\"X_val\"])}')
+                    print(f'Test samples: {len(result[\"X_test\"])}')
+                    print(f'Number of features: {result[\"X_train\"].shape[1]}')
+                else:
+                    print('❌ Preprocessing failed - no valid result returned!')
+                    sys.exit(1)
+                    
+            else:
+                print(f'❌ Preprocessing module not found at: {module_path}')
+                print('Available Python files in preprocessing directory:')
+                for file in os.listdir(preprocessing_dir):
+                    if file.endswith('.py'):
+                        print(f'  - {file}')
                 sys.exit(1)
-        except FileNotFoundError as e:
-            print(f'File not found: {e}')
-            print('Available files in root directory:')
-            for file in os.listdir('.'):
-                print(f'  - {file}')
+                
+        except ImportError as e:
+            print(f'❌ Import error: {e}')
             sys.exit(1)
         except Exception as e:
-            print(f'Error during preprocessing: {e}')
+            print(f'❌ Error during preprocessing: {e}')
             import traceback
             traceback.print_exc()
             sys.exit(1)
         "
     
-    - name: Display preprocessing summary
-      if: success()
+    - name: Verify output files
       run: |
-        echo "Preprocessing Summary:"
-        if [ -f "preprocessing/processed_data/preprocessing_summary.json" ]; then
-          python -c "
-import json
-with open('preprocessing/processed_data/preprocessing_summary.json', 'r') as f:
-    summary = json.load(f)
-print(json.dumps(summary, indent=2))
-          "
+        echo "Checking generated files:"
+        if [ -d preprocessing/processed_data ]; then
+          echo "Files in processed_data directory:"
+          ls -la preprocessing/processed_data/
+          
+          # Check if key files exist
+          for file in data_train.csv data_validation.csv data_test.csv label_encoder.pkl feature_scaler.pkl; do
+            if [ -f "preprocessing/processed_data/$file" ]; then
+              echo "✅ $file exists"
+            else
+              echo "❌ $file missing"
+            fi
+          done
         else
-          echo "Summary file not found"
+          echo "❌ processed_data directory not found"
+          exit 1
         fi
     
     - name: Upload preprocessing results
       uses: actions/upload-artifact@v4
       if: always()  # Upload artifacts even if previous steps failed
       with:
-        name: preprocessed-data
+        name: preprocessed-data-${{ github.run_number }}
         path: |
           preprocessing/processed_data/
           preprocessing/*.pkl
           preprocessing/*.csv
           preprocessing/*.json
         retention-days: 30
-    
-    - name: Generate preprocessing report
-      if: success()
-      run: |
-        python -c "
-import os
-import json
-from datetime import datetime
-
-# Generate simple report
-report = {
-    'timestamp': datetime.now().isoformat(),
-    'status': 'success',
-    'files_generated': os.listdir('preprocessing/processed_data/') if os.path.exists('preprocessing/processed_data/') else []
-}
-
-with open('preprocessing_report.json', 'w') as f:
-    json.dump(report, f, indent=2)
-
-print('Preprocessing report generated')
-        "
     
     - name: Commit and push results
       if: success()  # Only run if preprocessing was successful
@@ -224,48 +149,58 @@ print('Preprocessing report generated')
         git config --local user.name "silmiaathqia"
         
         # Check if there are changes to commit
-        git add preprocessing/processed_data/ preprocessing_report.json
+        git add preprocessing/processed_data/
         
-        if [ -n "$(git status --porcelain)" ]; then
-          git commit -m "Auto-update preprocessed data - $(date '+%Y-%m-%d %H:%M:%S')"
-          
-          # Try to push, handle potential conflicts
-          if ! git push; then
-            echo "Push failed, trying to pull and merge..."
-            git pull --rebase origin main
-            git push
-          fi
+        if [ -n "$(git status --porcelain preprocessing/processed_data/)" ]; then
+          git commit -m "🤖 Auto-update preprocessed data - $(date '+%Y-%m-%d %H:%M:%S')"
+          git push
+          echo "✅ Changes committed and pushed successfully"
         else
-          echo "No changes to commit"
+          echo "ℹ️ No changes to commit"
         fi
     
-    - name: Cleanup on failure
-      if: failure()
-      run: |
-        echo "Cleaning up after failure..."
-        # Remove any partial files that might have been created
-        rm -rf preprocessing/processed_data/*.tmp
-        rm -rf preprocessing/processed_data/*.partial
-        
-        # Create failure report
-        python -c "
-import json
-from datetime import datetime
-
-report = {
-    'timestamp': datetime.now().isoformat(),
-    'status': 'failed',
-    'error': 'Preprocessing workflow failed'
-}
-
-with open('preprocessing_failure_report.json', 'w') as f:
-    json.dump(report, f, indent=2)
-        "
-    
-    - name: Upload failure report
-      if: failure()
-      uses: actions/upload-artifact@v4
+    - name: Create summary comment
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
       with:
-        name: failure-report
-        path: preprocessing_failure_report.json
-        retention-days: 7
+        script: |
+          const fs = require('fs');
+          const path = 'preprocessing/processed_data/preprocessing_summary.json';
+          
+          if (fs.existsSync(path)) {
+            const summary = JSON.parse(fs.readFileSync(path, 'utf8'));
+            
+            const comment = `## 🤖 Automated Preprocessing Results
+            
+            ✅ **Preprocessing completed successfully!**
+            
+            ### Dataset Summary:
+            - **Original shape:** ${summary.original_shape ? summary.original_shape.join(' × ') : 'N/A'}
+            - **Final shape:** ${summary.final_shape_after_validation ? summary.final_shape_after_validation.join(' × ') : 'N/A'}
+            - **Missing values removed:** ${summary.missing_values_removed || 0}
+            - **Duplicates removed:** ${summary.duplicates_removed || 0}
+            - **Number of features:** ${summary.num_features || 'N/A'}
+            - **Number of classes:** ${summary.num_classes || 'N/A'}
+            
+            ### Data Split:
+            - **Training:** ${summary.split_info ? summary.split_info.train_percentage.toFixed(1) : 'N/A'}%
+            - **Validation:** ${summary.split_info ? summary.split_info.val_percentage.toFixed(1) : 'N/A'}%
+            - **Test:** ${summary.split_info ? summary.split_info.test_percentage.toFixed(1) : 'N/A'}%
+            
+            ### Generated Files:
+            - \`data_train.csv\`
+            - \`data_validation.csv\`
+            - \`data_test.csv\`
+            - \`label_encoder.pkl\`
+            - \`feature_scaler.pkl\`
+            - \`preprocessing_summary.json\`
+            
+            Ready for model training! 🚀`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+          }
