@@ -18,6 +18,26 @@
 
 ---
 
+## 🗺️ Navigasi Proyek MSML
+
+> Repo ini adalah bagian dari proyek akhir MSML yang terdiri dari 3 repo yang saling terhubung:
+
+```
+📦 Eksperimen_SML (K1)          ⚙️ Workflow-CI (K3)          📊 SMSML Submission
+─────────────────────           ────────────────────           ──────────────────
+EDA + Preprocessing      →      CI/CD + mlflow run .    →      Submission Lengkap
+automate_silmi.py               GitHub Actions                  K1 + K2 + K3 + K4
+GitHub Actions (K1)             MLflow Project                  Monitoring Grafana
+```
+
+| Repo | Kriteria | Deskripsi |
+|---|:---:|---|
+| **Eksperimen_SML_Silmi-Azdkiatul-Athqia** ← *kamu di sini* | K1 | EDA, preprocessing, automate script |
+| [Workflow-CI](https://github.com/silmiaathqia/Workflow-CI) | K3 | CI/CD pipeline, MLflow Project, Docker |
+| [SMSML_Silmi-Azdkiatul-Athqia](https://github.com/silmiaathqia/SMSML_Silmi-Azdkiatul-Athqia) | K1-K4 | Submission utama lengkap |
+
+---
+
 ## 📋 Deskripsi
 
 Repository ini berisi tahapan **eksperimen dan preprocessing dataset** untuk klasifikasi produktivitas pekerja remote. Mencakup EDA (Exploratory Data Analysis), preprocessing pipeline, dan otomasi menggunakan GitHub Actions.
